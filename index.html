@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#172554">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>明日のやることリスト</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#172033;background:#f4f6fb}
+*{box-sizing:border-box}
+body{margin:0;padding:24px 14px 48px}
+main{max-width:620px;margin:auto}
+header{background:#172554;color:white;border-radius:22px;padding:24px 22px;margin-bottom:18px}
+h1{font-size:1.45rem;margin:0 0 7px}
+#today{opacity:.88;font-size:.95rem}
+.card{background:white;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 5px 20px #1725540c}
+h2{font-size:1.05rem;margin:0 0 14px}
+.addrow{display:flex;gap:8px}
+input[type=text]{min-width:0;flex:1;border:1px solid #d7ddeb;border-radius:12px;padding:13px;font:inherit}
+button{border:0;border-radius:12px;padding:12px 16px;background:#3156b8;color:white;font:inherit;font-weight:650}
+button.secondary{background:#e9eefb;color:#24428f}
+ul{list-style:none;padding:0;margin:0}
+li{display:flex;align-items:center;gap:10px;padding:12px 2px;border-bottom:1px solid #edf0f5}
+li:last-child{border-bottom:0}
+li input{width:20px;height:20px;accent-color:#3156b8;flex:none}
+.task{flex:1;overflow-wrap:anywhere}
+.done .task{text-decoration:line-through;color:#8992a5}
+.delete{background:transparent;color:#8a93a5;padding:6px 8px;font-size:1.1rem}
+.meta{display:flex;justify-content:space-between;color:#69758d;font-size:.9rem;margin-top:12px}
+.empty{color:#8992a5;text-align:center;padding:18px 0}
+#archive{display:none}
+.archive-date{font-weight:700;margin-bottom:8px}
+.small{font-size:.85rem;color:#78839a}
+footer{color:#8791a5;font-size:.8rem;text-align:center;margin-top:20px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>明日のやることリスト</h1>
+  <div id="today" aria-live="polite"></div>
+</header>
+
+<section class="card">
+  <h2>やることを追加</h2>
+  <form class="addrow" id="addForm">
+    <input id="newTask" type="text" placeholder="例：数学の問題を3問解く" maxlength="120" autocomplete="off">
+    <button type="submit">追加</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>今日のタスク</h2>
+  <ul id="tasks"></ul>
+  <div id="empty" class="empty">タスクはまだありません。上から追加しよう！</div>
+  <div class="meta"><span id="progress">0 / 0 完了</span><span id="percent">0%</span></div>
+</section>
+
+<section class="card">
+  <button class="secondary" id="archiveToggle" type="button">昨日までの記録を見る</button>
+  <div id="archive">
+    <div style="height:14px"></div>
+    <div id="archiveList"></div>
+  </div>
+</section>
+<footer>タスクと達成状況はこの端末のブラウザに保存されます。</footer>
+</main>
+<script>
+const KEY = "dailyTodo_v2";
+const dateKey = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+};
+const prettyDate = key => {
+  const [y,m,d] = key.split("-").map(Number);
+  const date = new Date(y,m-1,d);
+  return `${y}年${m}月${d}日（${"日月火水木金土"[date.getDay()]}）`;
+};
+let data = load();
+let activeDate = dateKey();
+
+function load(){
+  try { return JSON.parse(localStorage.getItem(KEY)) || {days:{}}; }
+  catch { return {days:{}}; }
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(data)); }
+function ensureDay(key){
+  if(!data.days[key]) data.days[key] = [];
+}
+function rollover(){
+  const now = dateKey();
+  if(now !== activeDate){
+    activeDate = now;
+    ensureDay(activeDate);
+    save();
+    render();
+  }
+}
+function render(){
+  ensureDay(activeDate);
+  document.getElementById("today").textContent = prettyDate(activeDate);
+  const list = document.getElementById("tasks");
+  list.replaceChildren();
+  const items = data.days[activeDate];
+  document.getElementById("empty").style.display = items.length ? "none" : "block";
+  items.forEach((item,index)=>{
+    const li=document.createElement("li");
+    if(item.done) li.classList.add("done");
+    const check=document.createElement("input");
+    check.type="checkbox"; check.checked=!!item.done;
+    check.setAttribute("aria-label", item.text + "を完了");
+    check.addEventListener("change",()=>{item.done=check.checked;save();render();});
+    const span=document.createElement("span");
+    span.className="task"; span.textContent=item.text;
+    const del=document.createElement("button");
+    del.type="button"; del.className="delete"; del.textContent="削除";
+    del.setAttribute("aria-label",item.text+"を削除");
+    del.addEventListener("click",()=>{items.splice(index,1);save();render();});
+    li.append(check,span,del); list.append(li);
+  });
+  const completed=items.filter(x=>x.done).length;
+  const pct=items.length ? Math.round(completed/items.length*100) : 0;
+  document.getElementById("progress").textContent=`${completed} / ${items.length} 完了`;
+  document.getElementById("percent").textContent=`${pct}%`;
+}
+document.getElementById("addForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const input=document.getElementById("newTask");
+  const text=input.value.trim();
+  if(!text) return;
+  ensureDay(activeDate);
+  data.days[activeDate].push({text,done:false});
+  save(); input.value=""; render(); input.focus();
+});
+document.getElementById("archiveToggle").addEventListener("click",()=>{
+  const box=document.getElementById("archive");
+  const opening=box.style.display!=="block";
+  box.style.display=opening?"block":"none";
+  document.getElementById("archiveToggle").textContent=opening?"記録を閉じる":"昨日までの記録を見る";
+  if(opening) renderArchive();
+});
+function renderArchive(){
+  const root=document.getElementById("archiveList");
+  root.replaceChildren();
+  const keys=Object.keys(data.days).filter(k=>k<activeDate).sort().reverse();
+  if(!keys.length){const p=document.createElement("p");p.className="small";p.textContent="まだ過去の記録はありません。";root.append(p);return;}
+  keys.forEach(key=>{
+    const section=document.createElement("div");section.style.marginBottom="18px";
+    const heading=document.createElement("div");heading.className="archive-date";heading.textContent=prettyDate(key);
+    section.append(heading);
+    const ul=document.createElement("ul");
+    data.days[key].forEach(item=>{
+      const li=document.createElement("li");
+      const mark=document.createElement("span");mark.textContent=item.done?"☑":"□";
+      const text=document.createElement("span");text.className="task";text.textContent=item.text;
+      const status=document.createElement("span");status.className="small";status.textContent=item.done?"完了":"未完了";
+      li.append(mark,text,status);ul.append(li);
+    });
+    if(!data.days[key].length){const p=document.createElement("p");p.className="small";p.textContent="タスクなし";section.append(p);}
+    else section.append(ul);
+    root.append(section);
+  });
+}
+ensureDay(activeDate); save(); render();
+// ページを開いたまま日付が変わっても、0時以降に自動で当日分へ切り替える
+setInterval(rollover, 15000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden) rollover();});
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.error));
+}
+</script>
+</body>
+</html>
